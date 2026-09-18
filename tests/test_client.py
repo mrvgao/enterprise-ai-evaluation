@@ -61,6 +61,7 @@ class ClientTests(unittest.TestCase):
                 self.assertEqual(payload['domain'], 'retail_plus')
                 self.assertEqual(payload['commit_sha'], 'b' * 40)
                 self.assertIn(SHA, (root / 'out' / 'report.md').read_text())
+                self.assertIn('Managed connector version: `1.0.1`', (root / 'out' / 'report.md').read_text())
                 self.assertEqual(json.loads((root / 'out' / 'report.json').read_text()), result)
 
     def test_wrong_revision_fails_before_reading_source(self):

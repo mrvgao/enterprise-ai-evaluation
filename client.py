@@ -1,4 +1,4 @@
-"""Managed Enterprise AI CI client, v1.0.0. Never executes student code."""
+"""Managed Enterprise AI CI client, v1.0.1. Never executes student code."""
 
 import argparse
 import base64
@@ -26,6 +26,7 @@ EXTENSIONS = {
     ".yml",
 }
 _oidc_cache = None
+CLIENT_VERSION = "1.0.1"
 
 
 def language_for(files):
@@ -202,6 +203,7 @@ def save_report(result, directory):
         "report_md", f"Job `{result['job_id']}` is {result['status']}\n"
     )
     provenance = result.get("github", {})
+    markdown += "\n\nManaged connector version: `" + CLIENT_VERSION + "`\n"
     if provenance.get("evaluator_sha"):
         markdown += "\n\nEvaluation integration: `" + str(provenance["evaluator_sha"]) + "`\n"
     (directory / "report.md").write_text(markdown)
