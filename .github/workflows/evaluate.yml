@@ -1,0 +1,81 @@
+name: Managed Enterprise AI evaluation
+on:
+  workflow_call:
+    inputs:
+      binding-id:
+        required: true
+        type: string
+      api-url:
+        required: false
+        type: string
+        default: https://agentist.org/lab/api/enterprise-ai
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      # Resolve the called workflow's immutable commit from GitHub's OIDC token.
+      # github.workflow_sha belongs to the caller, not this reusable workflow.
+      - name: Resolve evaluator revision
+        id: evaluator
+        env:
+          BINDING_ID: ${{ inputs.binding-id }}
+        shell: bash
+        run: |
+          python3 -I - <<'PY'
+          import base64, json, os, re, uuid
+          from urllib.parse import urlparse, quote
+          from urllib.request import Request, build_opener, HTTPRedirectHandler
+          class NoRedirect(HTTPRedirectHandler):
+              def redirect_request(self, *args, **kwargs):
+                  raise RuntimeError("OIDC redirects are not accepted")
+          try:
+              binding = str(uuid.UUID(os.environ['BINDING_ID']))
+              url = os.environ['ACTIONS_ID_TOKEN_REQUEST_URL']
+              parsed = urlparse(url)
+              if parsed.scheme != 'https' or not (parsed.hostname or '').endswith('.actions.githubusercontent.com') or parsed.username or parsed.password:
+                  raise ValueError('Invalid OIDC origin')
+              req = Request(url + ('&' if parsed.query else '?') + 'audience=' + quote('hyper-lab:' + binding, safe=''), headers={'Authorization': 'Bearer ' + os.environ['ACTIONS_ID_TOKEN_REQUEST_TOKEN']})
+              with build_opener(NoRedirect()).open(req, timeout=20) as response:
+                  token = json.loads(response.read(32000))['value']
+              segment = token.split('.')[1]
+              claims = json.loads(base64.urlsafe_b64decode(segment + '=' * (-len(segment) % 4)))
+              ref, sha = claims['job_workflow_ref'], claims['job_workflow_sha']
+              if not re.fullmatch(r'mrvgao/enterprise-ai-evaluation/\.github/workflows/evaluate\.yml@refs/tags/v1(?:\.\d+\.\d+)?', ref) or not re.fullmatch(r'[a-f0-9]{40}', sha):
+                  raise ValueError('Unapproved evaluator revision')
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+                  output.write('sha=' + sha + '\n')
+          except Exception:
+              raise SystemExit('Could not verify evaluator revision; check OIDC permissions and the v1 release.') from None
+          PY
+      - name: Checkout trusted evaluator at the same immutable revision
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: mrvgao/enterprise-ai-evaluation
+          ref: ${{ steps.evaluator.outputs.sha }}
+          path: evaluator
+          persist-credentials: false
+      - name: Checkout submitted commit as data only
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+          path: submission
+          persist-credentials: false
+      - name: Submit and await remote evaluation
+        env:
+          HYPER_LAB_URL: ${{ inputs.api-url }}
+          HYPER_LAB_BINDING: ${{ inputs.binding-id }}
+          ENTERPRISE_EVALUATOR_SHA: ${{ steps.evaluator.outputs.sha }}
+        shell: bash
+        run: python3 -I evaluator/client.py submit --project submission --source github --commit "$GITHUB_SHA" --wait --timeout 21000
+      - name: Preserve evaluation report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: enterprise-ai-${{ github.sha }}
+          path: evaluation-results/
+          if-no-files-found: warn
+          retention-days: 7
