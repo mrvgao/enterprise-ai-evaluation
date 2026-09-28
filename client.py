@@ -1,4 +1,4 @@
-"""Managed Enterprise AI CI client, v1.0.1. Never executes student code."""
+"""Managed Enterprise AI CI client, v1.1.0. Never executes student code."""
 
 import argparse
 import base64
@@ -26,7 +26,7 @@ EXTENSIONS = {
     ".yml",
 }
 _oidc_cache = None
-CLIENT_VERSION = "1.0.1"
+CLIENT_VERSION = "1.1.0"
 
 
 def language_for(files):
@@ -105,8 +105,12 @@ class NoRedirect(HTTPRedirectHandler):
         raise RuntimeError("Evaluation API redirects are not accepted")
 
 
-def collect(root):
-    directory = root / "agent"
+def collect(root, assignment=False):
+    directory = root / ("cases" if assignment else "agent")
+    if assignment and not directory.exists() and (root / "project-1-2" / "cases").is_dir():
+        if (root / "project-1-2").is_symlink():
+            raise ValueError("Symlink assignment root is not allowed")
+        directory = root / "project-1-2" / "cases"
     if directory.is_symlink() or not directory.is_dir():
         raise ValueError("A real agent/ directory is required")
     files = []
@@ -119,17 +123,18 @@ def collect(root):
             for p in parts
         ):
             continue
-        if path.is_file() and path.suffix in EXTENSIONS:
+        if path.is_file() and path.suffix in ({".mjs"} if assignment else EXTENSIONS):
             if path.stat().st_size > 256 * 1024:
                 raise ValueError("Source file exceeds 256 KiB")
             if path.stem.lower() in {"secrets", "credentials", "id_rsa", "id_ed25519"}:
                 raise ValueError("Remove credential files from agent/")
             files.append(
-                {"path": "/".join(parts), "content": path.read_text(encoding="utf-8")}
+                {"path": ("cases/" if assignment else "") + "/".join(parts), "content": path.read_text(encoding="utf-8")}
             )
             if len(files) > 128:
                 raise ValueError("At most 128 source files are accepted")
-    language_for(files)
+    if not assignment:
+        language_for(files)
     return files
 
 
@@ -155,7 +160,7 @@ def api(method, path, payload=None, key=None):
         raise ValueError(
             "Set HYPER_LAB_URL to the instructor's HTTPS origin or Enterprise AI endpoint (HTTP only for localhost)"
         )
-    if parsed.hostname not in {"agentist.org", "test.agentist.org"} and not re.fullmatch(
+    if parsed.hostname not in {"agentist.org", "test.agentist.org", "parallight-lab-git-staging-mrvgaos-projects.vercel.app"} and not re.fullmatch(
         r"parallight-[a-z0-9]+-mrvgaos-projects\.vercel\.app", parsed.hostname or ""
     ):
         raise ValueError("Only approved Agentist API hosts are accepted")
@@ -213,7 +218,7 @@ def save_report(result, directory):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=["submit", "result"])
-    parser.add_argument("--task", choices=["t1", "t2", "p1"], default="t1")
+    parser.add_argument("--task", choices=["t1", "t2", "p1", "project-1-2"], default="t1")
     parser.add_argument("--language", choices=["python", "typescript"])
     parser.add_argument("--domain", choices=["airline_plus", "retail_plus"])
     parser.add_argument(
@@ -239,8 +244,8 @@ def main():
     args.task, args.domain, args.language = config["task"], config["domain"], config["language"]
     args.cases = ",".join(config["case_ids"]) if config.get("case_ids") else None
     if args.command == "submit":
-        files = collect(args.project.resolve())
-        language = language_for(files)
+        files = collect(args.project.resolve(), assignment=args.task == "project-1-2")
+        language = "typescript" if args.task == "project-1-2" else language_for(files)
         manifest = next(
             (
                 json.loads(item["content"])

@@ -61,7 +61,7 @@ class ClientTests(unittest.TestCase):
                 self.assertEqual(payload['domain'], 'retail_plus')
                 self.assertEqual(payload['commit_sha'], 'b' * 40)
                 self.assertIn(SHA, (root / 'out' / 'report.md').read_text())
-                self.assertIn('Managed connector version: `1.0.1`', (root / 'out' / 'report.md').read_text())
+                self.assertIn('Managed connector version: `1.1.0`', (root / 'out' / 'report.md').read_text())
                 self.assertEqual(json.loads((root / 'out' / 'report.json').read_text()), result)
 
     def test_wrong_revision_fails_before_reading_source(self):
@@ -69,6 +69,16 @@ class ClientTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 client.main()
             collect.assert_not_called()
+
+    def test_collect_seven_case_assignment_as_data(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            case = root / 'project-1-2' / 'cases' / '01-wrong-selection'
+            case.mkdir(parents=True)
+            (case / 'agent.mjs').write_text('throw Error("not imported")')
+            (case / 'tools.mjs').write_text('export {}')
+            files = client.collect(root, assignment=True)
+            self.assertEqual([f['path'] for f in files], ['cases/01-wrong-selection/agent.mjs', 'cases/01-wrong-selection/tools.mjs'])
 
     def test_http_errors_never_echo_credentials(self):
         from urllib.error import HTTPError

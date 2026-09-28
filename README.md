@@ -9,10 +9,11 @@ hidden tasks or grading implementation.
 1. Sign in to Agentist and bind your repository and branch.
 2. Download the repository setup package. Install **only**
    `.github/workflows/hyper-lab.yml`; keep your own `agent/` directory.
-3. Commit and push. The entry calls this repository's reusable workflow at `v1`.
+3. Commit and push. New unified entries pin this repository's reusable workflow at `v1.1.0`.
    GitHub Actions must be enabled and permit this public reusable workflow.
 
 学生只需安装一次平台生成的入口工作流，之后继续在本地编写并 push Agent。
+七题作业保留 `cases/` 或 `project-1-2/cases/`，无需改成 `agent/`；任务类型来自平台绑定。
 评测任务、场景、语言和案例范围从平台绑定读取；更换分支后请重新下载入口。
 不要复制其他同学的绑定 ID。无需填写 GitHub PAT、Daytona 或模型密钥。
 
